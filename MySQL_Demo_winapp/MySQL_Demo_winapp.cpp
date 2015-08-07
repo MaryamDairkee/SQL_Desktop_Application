@@ -5,7 +5,10 @@
 #include "MySQL_Demo_winapp.h"
 #include <my_global.h>
 #include <mysql.h>
-
+#include <fcntl.h>
+#include <io.h>
+#include <string>
+#include <process.h>
 
 #define MAX_LOADSTRING 100
 
@@ -15,7 +18,7 @@ TCHAR szTitle[MAX_LOADSTRING];					// The title bar text
 TCHAR szWindowClass[MAX_LOADSTRING];			// the main window class name
 mysqlconnection Sqlcon;
 HWND hWnd= NULL;
-
+HANDLE hThreadExec;
 // Forward declarations of functions included in this code module:
 ATOM				MyRegisterClass(HINSTANCE hInstance);
 BOOL				InitInstance(HINSTANCE, int);
@@ -23,6 +26,7 @@ LRESULT CALLBACK	WndProc(HWND, UINT, WPARAM, LPARAM);
 BOOL CALLBACK	About(HWND, UINT, WPARAM, LPARAM);
 INT_PTR CALLBACK Conn_Details(HWND hDlg, UINT message, WPARAM wParam, LPARAM lParam);
 void AppendText( const HWND &hwnd, TCHAR *newText );
+void ThreadQueryExecution( void * );
 
 
 //void finish_with_error(MYSQL *con)
@@ -191,19 +195,18 @@ case WM_COMMAND:
 
 		HWND hDiscon=GetDlgItem(hWnd,IDC_DISCON);
 		EnableWindow(hDiscon,false);
+		// _endthread();
+		//CloseHandle(hThreadExec);
+		TerminateThread(hThreadExec,0);
+		MessageBox(hWnd, TEXT("Thread Terminated"), TEXT("Alert"),MB_OK | MB_ICONINFORMATION);
+		EnableWindow(hExec,true);
+		EnableWindow(hDiscon,true);
 
-		Sqlcon.CloseConnection();
-
-		if(Sqlcon.RestoreConnection()){
-		MessageBox(hWnd, TEXT("Successfully Restored"), TEXT(""),MB_OK | MB_ICONINFORMATION);
 		HWND hStop=GetDlgItem(hWnd,IDC_STOP);
+
 		EnableWindow(hStop,false);
 		break;
 		}
-
-		else
-			MessageBox(hWnd, TEXT("Restore Unsuccessful"), TEXT("Error"),MB_OK | MB_ICONINFORMATION);
-		}	
 			
 	case IDC_DISCON:{
 			HWND hExec=GetDlgItem(hWnd,IDC_EXEC);
@@ -222,147 +225,11 @@ case WM_COMMAND:
 					}
 	case IDC_EXEC:
 		{
-			HWND hStop=GetDlgItem(hWnd,IDC_STOP);
-			EnableWindow(hStop,true);
-			//-------------Clears the result Window-----------------//
-			SetDlgItemText(hWnd,IDC_RESULT,L"");
-			MYSQL *con=Sqlcon.GetConnection();
-			
-//---------------------------------------Query Extraction----------------------------------------//
-		HWND hQuery=GetDlgItem(hWnd,IDC_QUERY);
-		int n=GetWindowTextLength(hQuery)+1;
-			
-		wchar_t* query= new wchar_t[n+1];
-		GetDlgItemText(hWnd,IDC_QUERY,query,n);
-
-		int len = WideCharToMultiByte(CP_UTF8,0,query,n,NULL,0,NULL, 0);
-		char* sql_query=new char[len+1];
-		WideCharToMultiByte(CP_UTF8,0,query,-1,sql_query,len+1,NULL,NULL);
-
-//-----------------------------------------End of Query Extraction---------------------------------------//	
-			
-		if (mysql_query(con,sql_query)) 
-			{
-				MessageBox(hWnd,L"Error in query",L"Query error",MB_OK | MB_ICONINFORMATION);
-				//exit(1);
-			}
-		else 
-		{
-			int status,count=0;
-			MYSQL_RES *result;
-
-			do{
-
-			count++;
-			result = mysql_store_result(con);
-			if(result){
-			
-			
-			wchar_t *c = new wchar_t[50];
-			swprintf(c, 10, L"%d", count);
-			
-			char *text=new char[50];
-			strcpy(text,"Result of Query ");
-
-			int tit_len = MultiByteToWideChar (CP_UTF8,0,text,strlen(text)+1, NULL, 0);
-			wchar_t *title= new wchar_t[tit_len+50];
-			MultiByteToWideChar (CP_UTF8, 0,text, -1,title, tit_len);
-			title[tit_len]=L'\0';
-			wcscat(title,c);
-			wcscat(title,L"\r\n");
-			
-		    //title=wcscat(title,c);
-			AppendText(hWnd,title);
-			
-
-
-			MYSQL_ROW row;
-			MYSQL_FIELD* field;
-			wchar_t* header;
-			int norow=mysql_num_rows(result);
-			int num_fields=mysql_num_fields(result);
-			header=(wchar_t*)GlobalAlloc(GPTR, sizeof(wchar_t)*num_fields*norow*500);
-			wcscpy(header,L"");
-			while ((row = mysql_fetch_row(result))) 
-			{ 
-						  
-		    for(int i = 0; i <num_fields; i++) 
-			{ 
-				if (i == 0) 
-			{              
-			while(field = mysql_fetch_field(result) )
-			{
-				wcscat(header,L"\t\t");
-				int length;
-
-
-				length = MultiByteToWideChar (CP_UTF8,0,field->name,strlen(field->name)+1, NULL, 0);
-
-				wchar_t * name = new wchar_t [length+1];
-
-
-				MultiByteToWideChar (CP_UTF8, 0,field->name, -1, name, length);
-				name[length]=L'\0';
-				wcscat(header,name);
-				delete[]name;
-
-			}
-
-			wcscat(header,L"\r\n");           
-		}
-		wcscat(header,L"\t\t");
-		int length;
-
-		char * details=new char[100];
-		strcpy(details,"");
-		strcat(details,(row[i] ? row[i] : "NULL"));
-		length = MultiByteToWideChar (CP_UTF8, 0,details, strlen(details)+1, NULL, 0);
-
-		wchar_t * name = new wchar_t [length+1];
-
-
-		MultiByteToWideChar (CP_UTF8, 0, details, -1, name, length);
-		name[length]=L'\0';
-		wcscat(header,name);
-		delete[] name;
-		delete[] details;
-
-		} 
-		wcscat(header,L"\r\n");
-			
-		}
-  
-		mysql_free_result(result);
-		AppendText(hWnd,header);
-		//SetDlgItemText(hWnd,IDC_RESULT,header);
-
-		//SendMessage(hWnd,EM_REPLACESEL,TRUE,header);
-			
-		}
-			 
-			else{
-  
-		if(mysql_errno(con))
-		{
-			fprintf(stderr, "%s\n", mysql_error(con));
-		}
-
-		else{
-				printf("Working !!");
-			}
-			}
-
-		//Append Code
-		status=mysql_next_result(con);
-		if(status>0)
-		{
-		MessageBox(hWnd, TEXT("Error in next query"), TEXT("Error"),MB_OK | MB_ICONINFORMATION);
-		}
-
-		} while(status==0);
-		
-		}
-		EnableWindow(hStop,false);
+		DWORD myThreadID;
+		//_beginthread(ThreadQueryExecution,0,NULL);
+		//hThreadExec = (HANDLE)_beginthreadex( NULL, 0,ThreadQueryExecution, NULL, 0, &myThreadID );
+		hThreadExec= (HANDLE)_beginthread(ThreadQueryExecution,0,NULL);
+		//CloseHandle(hThreadExec);
 		break;
 		
 		}
@@ -386,6 +253,7 @@ case WM_PAINT:
 	break;
 case WM_DESTROY:
 	Sqlcon.CloseConnection();
+	Sqlcon.ClearDetails();
 	PostQuitMessage(0);
 	break;
 default:
@@ -471,9 +339,9 @@ case WM_COMMAND:
 ////////////---------------------------------------------------------/////////////////////
 		
 		EndDialog(hDlg,true);
-			  
+		
 		CreateWindowEx(NULL, TEXT("EDIT"),TEXT("Write Query"),
-			WS_BORDER|WS_HSCROLL|WS_VSCROLL|ES_AUTOVSCROLL|ES_WANTRETURN|WS_COPY|WS_PASTE|WS_VISIBLE|WS_CHILD|WS_TABSTOP,0,0,1275,350, hWnd, (HMENU)IDC_QUERY,GetModuleHandle(NULL), NULL);
+			WS_BORDER|WS_HSCROLL|WS_VSCROLL|ES_AUTOVSCROLL|ES_WANTRETURN|WS_VISIBLE|WS_CHILD|WS_TABSTOP,0,0,1275,350, hWnd, (HMENU)IDC_QUERY,GetModuleHandle(NULL), NULL);
 			
 
 		CreateWindowEx(NULL, TEXT("EDIT"),TEXT("Query Result"),
@@ -498,6 +366,16 @@ case WM_COMMAND:
 		else{
 		MessageBox(hDlg,L"Connection Unsuccessful",L"Failure",MB_OK | MB_ICONINFORMATION);
 		}
+	
+		delete[] username;
+		delete[] pass;
+		delete[] host;
+		delete[] db;
+		delete[] sql_pass;
+		delete[] sql_host;
+		delete[] sql_db;
+		delete[] sql_username;
+
 	}
 	return (INT_PTR)true;	
 
@@ -505,7 +383,8 @@ case WM_COMMAND:
                 EndDialog(hDlg, true);
             break;
 		
-	
+case WM_CLOSE:
+		EndDialog(hDlg, true);
 default:
 	return (INT_PTR)false;
 	
@@ -559,20 +438,151 @@ SendMessage( hwndOutput, EM_SETSEL, StartPos, EndPos );
 
 }
 
-//void AppendText( const HWND &hDlg, TCHAR *newText ){
-// HWND hEdit = GetDlgItem (hDlg, IDC_RESULT);
-//   int ndx = GetWindowTextLength (hEdit);
-//   SetFocus (hEdit);
-//   #ifdef WIN32
-//      SendMessage (hEdit, EM_SETSEL, (WPARAM)ndx, (LPARAM)ndx);
-//   #else
-//      SendMessage (hEdit, EM_SETSEL, 0, MAKELONG (ndx, ndx));
-//   #endif
-//	   #ifdef WIN32
-//      SendMessage (hEdit, EM_SETSEL, (WPARAM)ndx, (LPARAM)ndx);
-//   #else
-//      SendMessage (hEdit, EM_SETSEL, 0, MAKELONG (ndx, ndx));
-//   #endif
-//      SendMessage (hEdit, EM_REPLACESEL, 0, (LPARAM)newText);
-//}
-//
+
+
+//------------------------------------------------Thread Function--------------------------------------------//
+
+
+void ThreadQueryExecution( void * )
+{
+			HWND hStop=GetDlgItem(hWnd,IDC_STOP);
+			EnableWindow(hStop,true);
+			SetDlgItemText(hWnd,IDC_RESULT,L"");
+			MYSQL *con=Sqlcon.GetConnection();
+			
+//---------------------------------------Query Extraction----------------------------------------//
+		HWND hQuery=GetDlgItem(hWnd,IDC_QUERY);
+		int n=GetWindowTextLength(hQuery)+1;
+			
+		wchar_t* query= new wchar_t[n+1];
+		GetDlgItemText(hWnd,IDC_QUERY,query,n);
+
+		int len = WideCharToMultiByte(CP_ACP,0,query,n,NULL,0,NULL, 0);
+		char* sql_query=new char[len+1];
+		WideCharToMultiByte(CP_ACP,0,query,-1,sql_query,len+1,NULL,NULL);
+	
+//-----------------------------------------End of Query Extraction---------------------------------------//	
+		
+		mysql_query(con,"SET character_set_results = 'utf8', character_set_client = 'utf8', character_set_connection = 'utf8', character_set_database = 'utf8', character_set_server = 'utf8'") ;
+		if (mysql_query(con,sql_query)) 
+			{
+
+				MessageBoxA(hWnd,"Error in Query","Query error",MB_OK | MB_ICONINFORMATION);
+				//exit(1);
+			}
+		else 
+		{
+			int status,count=0;
+			MYSQL_RES *result;
+
+			do{
+
+			count++;
+			result = mysql_store_result(con);
+			if(result){
+			
+			
+			wchar_t *c = new wchar_t[50];
+			swprintf(c, 10, L"%d", count);
+			
+			char *text=new char[50];
+			strcpy(text,"Result of Query ");
+
+			int tit_len = MultiByteToWideChar (CP_UTF8,0,text,strlen(text)+1, NULL, 0);
+			wchar_t *title= new wchar_t[tit_len+50];
+			MultiByteToWideChar (CP_UTF8, 0,text, -1,title, tit_len);
+			title[tit_len]=L'\0';
+			wcscat(title,c);
+			wcscat(title,L"\r\n");
+			
+		    //title=wcscat(title,c);
+			AppendText(hWnd,title);
+			
+
+
+			MYSQL_ROW row;
+			MYSQL_FIELD* field;
+			wchar_t* header;
+			int norow=mysql_num_rows(result);
+			int num_fields=mysql_num_fields(result);
+			header=(wchar_t*)GlobalAlloc(GPTR, sizeof(wchar_t)*num_fields*norow*500);
+			wcscpy(header,L"");
+			while ((row = mysql_fetch_row(result))) 
+			{ 
+						  
+		    for(int i = 0; i <num_fields; i++) 
+			{ 
+				if (i == 0) 
+			{              
+			while(field = mysql_fetch_field(result) )
+			{
+				wcscat(header,L"\t\t");
+				int length;
+
+				//col_name=(field->name)
+				length = MultiByteToWideChar(CP_UTF8,0,field->name,-1, NULL, 0);
+				wchar_t * name = new wchar_t [length+1];
+				MultiByteToWideChar (CP_UTF8, 0,field->name, -1, name, length);
+
+				name[length]=L'\0';
+				wcscat(header,name);
+				delete[]name;
+
+			}
+
+			wcscat(header,L"\r\n");           
+		}
+		wcscat(header,L"\t\t");
+		int length;
+
+		char * details=new char[100];
+		strcpy(details,"");
+		strcat(details,(row[i] ? row[i] : "NULL"));
+		 
+		 int wchars_num = MultiByteToWideChar( CP_UTF8 , 0 ,details , -1, NULL , 0 );
+		 wchar_t* name = new wchar_t[wchars_num]; 
+		 MultiByteToWideChar(CP_UTF8 , 0 ,details , -1, name , wchars_num );
+
+		wcscat(header,name);
+		delete[] name;
+		delete[] details;
+
+		} 
+		wcscat(header,L"\r\n");
+			
+		}
+  
+		mysql_free_result(result);
+		AppendText(hWnd,header);
+		//SetDlgItemText(hWnd,IDC_RESULT,header);
+
+		//SendMessage(hWnd,EM_REPLACESEL,TRUE,header);
+			
+		}
+			 
+			else{
+  
+		if(mysql_errno(con))
+		{
+			fprintf(stderr, "%s\n", mysql_error(con));
+		}
+
+		else{
+				printf("Working !!");
+			}
+			}
+
+		//Append Code
+		status=mysql_next_result(con);
+		if(status>0)
+		{
+		MessageBox(hWnd, TEXT("Error in next query"), TEXT("Error"),MB_OK | MB_ICONINFORMATION);
+		}
+
+		} while(status==0);
+		
+		}
+
+		EnableWindow(hStop,false);
+		 _endthread();
+}
